@@ -108,6 +108,7 @@ function checkInitData() {
 function loadUserData() {
     getCurrentSearches();
     getBrokerBlocks();
+    getVehicleBlocks();
     getPersistentBrokerBlocks();
     checkAdminRights();
 }
@@ -203,6 +204,7 @@ function getPayloadData() {
     let readyToShip = document.getElementById('readyToShip').value;
     let minTotal = document.getElementById('minTotal').value;
     let minPpm = document.getElementById('minPpm').value.replace(",", ".");
+    let alias = document.getElementById('searchAlias').value;
     return {
         locations,
         vehicleTypes,
@@ -212,7 +214,8 @@ function getPayloadData() {
         maxVehicles,
         readyToShip,
         minTotal,
-        minPpm
+        minPpm,
+        alias
     }
 }
 
@@ -391,7 +394,7 @@ function renderCurrentSearches(searches){
     searches.forEach(s => {
         renderString += `
         <li class="list-group-item pb-4" id="search${s.orderSearchId}">
-            <span class="mb-2 fs-5">Order search ${s.orderSearchId}</span>
+            <span class="mb-2 fs-5">Order search ${s.orderSearchId} ${s.alias !== "" ? "- <b>" + s.alias + "</b>" : ""}</span>
             <br>
             <span class="mb-2 fs-5">Created at - ${new Date(Date.parse(s.createdAt)).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}</span>
             <br>
@@ -542,7 +545,7 @@ function renderBrokerBlocks(blocks){
     let renderString = "";
     blocks.forEach(b => {
         renderString += `<li id="block${b.blockId}" class="list-group-item d-flex justify-content-between">
-                            <span>${b.value}</span>
+                            <span><b>${b.value}</b> ${b.isPersistent ? "(this block was added by admin)" : ""}</span>
                             <button type="button" class="btn btn-danger" ${b.isPersistent ? "disabled" : ""} onclick="deleteBrokerBlock(${b.blockId})">
                                 <i class="bi bi-trash"></i>
                             </button>
@@ -553,6 +556,24 @@ function renderBrokerBlocks(blocks){
         blocksContainer.innerHTML = renderString;
     } else {
         blocksContainer.innerHTML = "<li class=\"list-group-item\">You don't have any blocked brokers</li>";
+    }
+}
+
+function renderVehicleBlocks(blocks){
+    let renderString = "";
+    blocks.forEach(b => {
+        renderString += `<li id="vblock${b.blockId}" class="list-group-item d-flex justify-content-between">
+                            <span><b>${b.value}</b></span>
+                            <button type="button" class="btn btn-danger" onclick="deleteVehicleBlock(${b.blockId})">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </li>`;
+    });
+    let blocksContainer = document.getElementById('vblock-list');
+    if (renderString != ""){
+        blocksContainer.innerHTML = renderString;
+    } else {
+        blocksContainer.innerHTML = "<li class=\"list-group-item\">You don't have any blocked vehicles</li>";
     }
 }
 
@@ -1062,6 +1083,75 @@ function deleteBrokerBlock(blockId){
                 return;
             }
             showPopup("There was an error while deleting broker block");
+        });
+      } else {
+      }
+}
+
+function getVehicleBlocks(){
+    axios.get(baseAddress + "/blocked-vehicles", {
+        headers: {
+            Authorization: `Bearer ${token}`,
+            'ngrok-skip-browser-warning': '69420'
+         }
+        })
+        .then(function (response){
+            renderVehicleBlocks(response.data);
+        })
+        .catch(function (error){
+            if (error.response.status == 401){
+                showSessionTokenModal();
+                return;
+            }
+            showPopup("There was an error while loading vehicle blocks");
+        });
+}
+
+function createVehicleBlock(){
+    var vehicleNameInput = document.getElementById('vehicleInput');
+    if (vehicleNameInput.value != ''){
+        axios.post(baseAddress + "/blocked-vehicle/", vehicleNameInput.value, {
+            headers: {
+                Authorization: `Bearer ${token}`,
+                'Content-Type': 'application/json'
+             }
+        })
+        .then(function (response){
+            Telegram.WebApp.HapticFeedback.notificationOccurred('success');
+            vehicleNameInput.value = "";
+            showPopup("New vehicle block created");
+            getVehicleBlocks();
+        })
+        .catch(function (error){
+            if (error.response.status == 401){
+                showSessionTokenModal();
+                return;
+            }
+            showPopup("There was an error while creating vehicle block");
+        });    
+    } else{
+        Telegram.WebApp.HapticFeedback.notificationOccurred('error');
+        alert("Vehicle name cannot be empty!");
+    }
+}
+
+function deleteVehicleBlock(blockId){
+    if (confirm('Are you sure you want to delete this vehicle block?')) {
+        axios.delete(baseAddress + "/blocked-vehicle/" + blockId, {
+            headers: {
+                Authorization: `Bearer ${token}`
+             }
+        })
+        .then(function (response){
+            Telegram.WebApp.HapticFeedback.impactOccurred('light');
+            getVehicleBlocks();
+        })
+        .catch(function (error){
+            if (error.response.status == 401){
+                showSessionTokenModal();
+                return;
+            }
+            showPopup("There was an error while deleting vehicle block");
         });
       } else {
       }
