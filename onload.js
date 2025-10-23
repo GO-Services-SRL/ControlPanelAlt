@@ -860,6 +860,7 @@ if (debug) {
     baseAddress = "https://loadbot.ngrok.app/web";
 }
 let token = '';
+axios.defaults.headers.common['ngrok-skip-browser-warning'] = '69420'
 
 function refreshToken(){
     axios.post(baseAddress + "/validate", {
