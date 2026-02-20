@@ -1,4 +1,4 @@
-const debug = true;
+const debug = false;
 
 const options = {
     fields: ["place_id", "formatted_address", "name", "address_components", "geometry"],
