@@ -410,6 +410,44 @@ function getSearchToggleButtonClass(searchState) {
     return isSearchEnabled(searchState) ? "btn-outline-warning" : "btn-outline-success";
 }
 
+const SearchActionThrottleMs = 1200;
+const searchActionInFlight = new Set();
+const searchActionLastTriggeredAt = new Map();
+
+function tryStartSearchAction(actionKey) {
+    if (searchActionInFlight.has(actionKey)) {
+        return false;
+    }
+
+    const now = Date.now();
+    const lastTriggeredAt = searchActionLastTriggeredAt.get(actionKey) ?? 0;
+    if (now - lastTriggeredAt < SearchActionThrottleMs) {
+        return false;
+    }
+
+    searchActionLastTriggeredAt.set(actionKey, now);
+    searchActionInFlight.add(actionKey);
+    return true;
+}
+
+function finishSearchAction(actionKey) {
+    searchActionInFlight.delete(actionKey);
+}
+
+function setSearchButtonsDisabled(searchId, disabled) {
+    const actionButtons = [
+        document.getElementById('saveSearch' + searchId),
+        document.getElementById('toggleSearch' + searchId),
+        document.getElementById('deleteSearch' + searchId)
+    ];
+
+    actionButtons.forEach(button => {
+        if (button) {
+            button.disabled = disabled;
+        }
+    });
+}
+
 function renderCurrentSearches(searches){
     let renderString = "";
     searches.forEach(s => {
@@ -550,9 +588,9 @@ function renderCurrentSearches(searches){
                 </div>
             </div>
             <div class="d-flex gap-2 mt-2">
-                <button type="button" class="btn btn-primary flex-fill" onclick="updateSavedSearch(${s.orderSearchId})"><i class="bi bi-floppy"></i></button>
+                <button type="button" class="btn btn-primary flex-fill" id="saveSearch${s.orderSearchId}" onclick="updateSavedSearch(${s.orderSearchId})"><i class="bi bi-floppy"></i></button>
                 <button type="button" class="btn ${getSearchToggleButtonClass(s.searchState)} flex-fill" id="toggleSearch${s.orderSearchId}" onclick="toggleSavedSearch(${s.orderSearchId})">${getSearchToggleButtonText(s.searchState)}</button>
-                <button type="button" class="btn btn-danger flex-fill" onclick="deleteSavedSearch(${s.orderSearchId})"><i class="bi bi-trash"></i></button>
+                <button type="button" class="btn btn-danger flex-fill" id="deleteSearch${s.orderSearchId}" onclick="deleteSavedSearch(${s.orderSearchId})"><i class="bi bi-trash"></i></button>
             </div>
         </li>
         `
@@ -937,18 +975,39 @@ function showErrorMessage(error){
 }
 
 function createNewSearch(){
+    const actionKey = "create:new";
+    if (!tryStartSearchAction(actionKey)) {
+        return;
+    }
+
+    const createButton = document.getElementById('createSearchButton');
+    if (createButton){
+        createButton.disabled = true;
+        createButton.innerHTML = "Saving...";
+    }
+
     let minVehicles = document.getElementById('minVehicles').value;
     let maxVehicles = document.getElementById('maxVehicles').value;
     if (parseInt(minVehicles) > parseInt(maxVehicles))
     {
         Telegram.WebApp.HapticFeedback.notificationOccurred('error');
         alert("Min vehicles amount cannot be greater than max vehicles amount!");
+        if (createButton){
+            createButton.disabled = false;
+            createButton.innerHTML = "Save";
+        }
+        finishSearchAction(actionKey);
         return;
     }
     let payload = getPayloadData();
     if (payload.locations.length == 0 && payload.trailerType != 'ENCLOSED'){
         Telegram.WebApp.HapticFeedback.notificationOccurred('error');
         alert("Cannot create a search without any pickup or delivery location!");
+        if (createButton){
+            createButton.disabled = false;
+            createButton.innerHTML = "Save";
+        }
+        finishSearchAction(actionKey);
         return;
     }
     axios.post(baseAddress + "/search", payload, {
@@ -961,16 +1020,31 @@ function createNewSearch(){
         showPopup("Search created");
         getCurrentSearches();
         let accordionItem2 = document.getElementById('flush-collapseTwo');
-        let bsCollapse = new bootstrap.Collapse(accordionItem2, {
+        new bootstrap.Collapse(accordionItem2, {
             toggle: true
-        })
-        .catch(function (error){
-            if (error.response.status == 401){
-                showSessionTokenModal();
-                return;
-            }
-            showPopup("There was an error while saving new search");
         });
+    })
+    .catch(function (error){
+        if (error.response && error.response.status == 401){
+            showSessionTokenModal();
+            return;
+        }
+        if (error.response && error.response.status == 429){
+            showPopup("Too many requests. Please wait and try again.");
+            return;
+        }
+        if (error.response && error.response.status == 400 && typeof error.response.data === "string"){
+            showPopup(error.response.data);
+            return;
+        }
+        showPopup("There was an error while saving new search");
+    })
+    .finally(function (){
+        if (createButton){
+            createButton.disabled = false;
+            createButton.innerHTML = "Save";
+        }
+        finishSearchAction(actionKey);
     });
 }
 
@@ -1014,6 +1088,18 @@ function updateSearchStatusUI(searchId, searchState){
 }
 
 function toggleSavedSearch(searchId){
+    const actionKey = "toggle:" + searchId;
+    if (!tryStartSearchAction(actionKey)) {
+        return;
+    }
+
+    let toggleSucceeded = false;
+    setSearchButtonsDisabled(searchId, true);
+    const toggleButton = document.getElementById('toggleSearch' + searchId);
+    if (toggleButton){
+        toggleButton.innerHTML = "Updating...";
+    }
+
     axios.patch(baseAddress + "/search/" + searchId + "/toggle", null, {
         headers: {
             Authorization: `Bearer ${token}`,
@@ -1032,21 +1118,55 @@ function toggleSavedSearch(searchId){
         const updatedState = response.data.searchState;
         updateSearchStatusUI(searchId, updatedState);
         showPopup(isSearchEnabled(updatedState) ? "Search enabled" : "Search disabled");
+        toggleSucceeded = true;
     })
     .catch(function (error){
-        if (error.response.status == 401){
+        if (error.response && error.response.status == 401){
             showSessionTokenModal();
             return;
         }
+        if (error.response && error.response.status == 429){
+            showPopup("Too many requests. Please wait and try again.");
+            return;
+        }
+        if (error.response && error.response.status == 400 && typeof error.response.data === "string"){
+            showPopup(error.response.data);
+            return;
+        }
         showPopup("There was an error while changing search status");
+    })
+    .finally(function (){
+        setSearchButtonsDisabled(searchId, false);
+        if (!toggleSucceeded){
+            const searchCard = document.getElementById('search' + searchId);
+            const currentState = parseInt(searchCard?.getAttribute('data-search-state') ?? SearchState.Active);
+            updateSearchStatusUI(searchId, currentState);
+        }
+        finishSearchAction(actionKey);
     });
 }
 
 function updateSavedSearch(searchId){
+    const actionKey = "update:" + searchId;
+    if (!tryStartSearchAction(actionKey)) {
+        return;
+    }
+
+    setSearchButtonsDisabled(searchId, true);
+    const saveButton = document.getElementById('saveSearch' + searchId);
+    if (saveButton){
+        saveButton.innerHTML = "Saving...";
+    }
+
     var payload = getSearchData(searchId);
     if (payload.minVehicles > payload.maxVehicles){
         Telegram.WebApp.HapticFeedback.notificationOccurred('error');
         alert("Min vehicles amount cannot be greater than max vehicles amount!");
+        setSearchButtonsDisabled(searchId, false);
+        if (saveButton){
+            saveButton.innerHTML = '<i class="bi bi-floppy"></i>';
+        }
+        finishSearchAction(actionKey);
     }
     else {
         axios.put(baseAddress + "/search/" + searchId, payload, {
@@ -1061,11 +1181,23 @@ function updateSavedSearch(searchId){
             getCurrentSearches();
         })
         .catch(function (error){
-            if (error.response.status == 401){
+            if (error.response && error.response.status == 401){
                 showSessionTokenModal();
                 return;
             }
+            if (error.response && error.response.status == 429){
+                showPopup("Too many requests. Please wait and try again.");
+                return;
+            }
             showPopup("There was an error while updating search");
+        })
+        .finally(function (){
+            setSearchButtonsDisabled(searchId, false);
+            const currentSaveButton = document.getElementById('saveSearch' + searchId);
+            if (currentSaveButton){
+                currentSaveButton.innerHTML = '<i class="bi bi-floppy"></i>';
+            }
+            finishSearchAction(actionKey);
         });
     }
 }
