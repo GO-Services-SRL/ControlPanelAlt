@@ -1,4 +1,4 @@
-const debug = false;
+const debug = true;
 
 const options = {
     fields: ["place_id", "formatted_address", "name", "address_components", "geometry"],
@@ -389,12 +389,33 @@ const PaymentFrequency = {
     6: "6 months"
 }
 
+const SearchState = {
+    Active: 1,
+    Disabled: 2
+}
+
+function isSearchEnabled(searchState) {
+    return searchState !== SearchState.Disabled;
+}
+
+function getSearchStatusText(searchState) {
+    return isSearchEnabled(searchState) ? "enabled" : "disabled";
+}
+
+function getSearchToggleButtonText(searchState) {
+    return isSearchEnabled(searchState) ? "Disable" : "Enable";
+}
+
+function getSearchToggleButtonClass(searchState) {
+    return isSearchEnabled(searchState) ? "btn-outline-warning" : "btn-outline-success";
+}
+
 function renderCurrentSearches(searches){
     let renderString = "";
     searches.forEach(s => {
         renderString += `
-        <li class="list-group-item pb-4" id="search${s.orderSearchId}">
-            <span class="mb-2 fs-5">Order search ${s.orderSearchId} ${s.alias !== "" ? "- <b>" + s.alias + "</b>" : ""}</span>
+        <li class="list-group-item pb-4" id="search${s.orderSearchId}" data-search-state="${s.searchState}">
+            <span class="mb-2 fs-5">Order search ${s.orderSearchId} - <span id="searchStatus${s.orderSearchId}">${getSearchStatusText(s.searchState)}</span> ${s.alias !== "" ? "- <b>" + s.alias + "</b>" : ""}</span>
             <br>
             <span class="mb-2 fs-5">Created at - ${new Date(Date.parse(s.createdAt)).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}</span>
             <br>
@@ -528,8 +549,11 @@ function renderCurrentSearches(searches){
                     </div>
                 </div>
             </div>
-            <button type="button" class="btn btn-primary w-25" onclick="updateSavedSearch(${s.orderSearchId})"><i class="bi bi-floppy"></i></button>
-            <button type="button" class="btn btn-danger w-25" onclick="deleteSavedSearch(${s.orderSearchId})"><i class="bi bi-trash"></i></button>
+            <div class="d-flex gap-2 mt-2">
+                <button type="button" class="btn btn-primary flex-fill" onclick="updateSavedSearch(${s.orderSearchId})"><i class="bi bi-floppy"></i></button>
+                <button type="button" class="btn ${getSearchToggleButtonClass(s.searchState)} flex-fill" id="toggleSearch${s.orderSearchId}" onclick="toggleSavedSearch(${s.orderSearchId})">${getSearchToggleButtonText(s.searchState)}</button>
+                <button type="button" class="btn btn-danger flex-fill" onclick="deleteSavedSearch(${s.orderSearchId})"><i class="bi bi-trash"></i></button>
+            </div>
         </li>
         `
     });
@@ -966,6 +990,55 @@ function getCurrentSearches(){
             return;
         }
         showPopup("There was an error while loading searches");
+    });
+}
+
+function updateSearchStatusUI(searchId, searchState){
+    const normalizedSearchState = isSearchEnabled(searchState) ? SearchState.Active : SearchState.Disabled;
+    const searchStatus = document.getElementById('searchStatus' + searchId);
+    if (searchStatus){
+        searchStatus.innerHTML = getSearchStatusText(normalizedSearchState);
+    }
+
+    const toggleButton = document.getElementById('toggleSearch' + searchId);
+    if (toggleButton){
+        toggleButton.innerHTML = getSearchToggleButtonText(normalizedSearchState);
+        toggleButton.classList.remove('btn-outline-warning', 'btn-outline-success');
+        toggleButton.classList.add(getSearchToggleButtonClass(normalizedSearchState));
+    }
+
+    const searchCard = document.getElementById('search' + searchId);
+    if (searchCard){
+        searchCard.setAttribute('data-search-state', normalizedSearchState.toString());
+    }
+}
+
+function toggleSavedSearch(searchId){
+    axios.patch(baseAddress + "/search/" + searchId + "/toggle", null, {
+        headers: {
+            Authorization: `Bearer ${token}`,
+            'ngrok-skip-browser-warning': '69420'
+         }
+    })
+    .then(function (response){
+        Telegram.WebApp.HapticFeedback.notificationOccurred('success');
+
+        if (!response.data || response.data.searchState === undefined){
+            showPopup("Search status updated");
+            getCurrentSearches();
+            return;
+        }
+
+        const updatedState = response.data.searchState;
+        updateSearchStatusUI(searchId, updatedState);
+        showPopup(isSearchEnabled(updatedState) ? "Search enabled" : "Search disabled");
+    })
+    .catch(function (error){
+        if (error.response.status == 401){
+            showSessionTokenModal();
+            return;
+        }
+        showPopup("There was an error while changing search status");
     });
 }
 
