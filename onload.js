@@ -394,8 +394,30 @@ const SearchState = {
     Disabled: 2
 }
 
+function normalizeSearchStateValue(searchOrState) {
+    if (typeof searchOrState === "boolean") {
+        return searchOrState ? SearchState.Active : SearchState.Disabled;
+    }
+
+    if (searchOrState && typeof searchOrState === "object") {
+        if (typeof searchOrState.isEnabled === "boolean") {
+            return searchOrState.isEnabled ? SearchState.Active : SearchState.Disabled;
+        }
+
+        if (searchOrState.searchState !== undefined && searchOrState.searchState !== null) {
+            return searchOrState.searchState === SearchState.Disabled ? SearchState.Disabled : SearchState.Active;
+        }
+    }
+
+    if (searchOrState === SearchState.Disabled) {
+        return SearchState.Disabled;
+    }
+
+    return SearchState.Active;
+}
+
 function isSearchEnabled(searchState) {
-    return searchState !== SearchState.Disabled;
+    return normalizeSearchStateValue(searchState) !== SearchState.Disabled;
 }
 
 function getSearchStatusText(searchState) {
@@ -408,6 +430,16 @@ function getSearchToggleButtonText(searchState) {
 
 function getSearchToggleButtonClass(searchState) {
     return isSearchEnabled(searchState) ? "btn-outline-warning" : "btn-outline-success";
+}
+
+function hasVehicleType(vehicleTypes, numericValue, enumName) {
+    if (!Array.isArray(vehicleTypes)) {
+        return false;
+    }
+
+    return vehicleTypes.includes(numericValue)
+        || vehicleTypes.includes(enumName)
+        || vehicleTypes.includes(enumName.toLowerCase());
 }
 
 const SearchActionThrottleMs = 1200;
@@ -451,9 +483,12 @@ function setSearchButtonsDisabled(searchId, disabled) {
 function renderCurrentSearches(searches){
     let renderString = "";
     searches.forEach(s => {
+        const normalizedSearchState = normalizeSearchStateValue(s);
+        const searchAlias = s.alias ?? "";
         renderString += `
-        <li class="list-group-item pb-4" id="search${s.orderSearchId}" data-search-state="${s.searchState}">
-            <span class="mb-2 fs-5">Order search ${s.orderSearchId} - <span id="searchStatus${s.orderSearchId}">${getSearchStatusText(s.searchState)}</span> ${s.alias !== "" ? "- <b>" + s.alias + "</b>" : ""}</span>
+        <li class="list-group-item pb-4" id="search${s.orderSearchId}" data-search-state="${normalizedSearchState}">
+            <input id="alias${s.orderSearchId}" type="hidden" value="${searchAlias}">
+            <span class="mb-2 fs-5">Order search ${s.orderSearchId} - <span id="searchStatus${s.orderSearchId}">${getSearchStatusText(normalizedSearchState)}</span> ${searchAlias !== "" ? "- <b>" + searchAlias + "</b>" : ""}</span>
             <br>
             <span class="mb-2 fs-5">Created at - ${new Date(Date.parse(s.createdAt)).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}</span>
             <br>
@@ -518,37 +553,37 @@ function renderCurrentSearches(searches){
             <div class="row" id="vehicleTypes${s.orderSearchId}">
                 <div class="col">
                     <div class="form-check">
-                        <input class="form-check-input" type="checkbox" value="ATV" id="atv${s.orderSearchId}" ${s.vehicleType.includes(1) ? 'checked' : ''}>
+                        <input class="form-check-input" type="checkbox" value="ATV" id="atv${s.orderSearchId}" ${hasVehicleType(s.vehicleType, 1, 'ATV') ? 'checked' : ''}>
                         <label class="form-check-label" for="atv${s.orderSearchId}">
                         ATV
                         </label>
                     </div>
                     <div class="form-check">
-                        <input class="form-check-input" type="checkbox" value="Boat" id="boat${s.orderSearchId}" ${s.vehicleType.includes(2) ? 'checked' : ''}>
+                        <input class="form-check-input" type="checkbox" value="Boat" id="boat${s.orderSearchId}" ${hasVehicleType(s.vehicleType, 2, 'Boat') ? 'checked' : ''}>
                         <label class="form-check-label" for="boat${s.orderSearchId}">
                         Boat
                         </label>
                     </div>
                     <div class="form-check">
-                        <input class="form-check-input" type="checkbox" value="Car" id="car${s.orderSearchId}" ${s.vehicleType.includes(4) ? 'checked' : ''}>
+                        <input class="form-check-input" type="checkbox" value="Car" id="car${s.orderSearchId}" ${hasVehicleType(s.vehicleType, 4, 'Car') ? 'checked' : ''}>
                         <label class="form-check-label" for="car${s.orderSearchId}">
                         Car
                         </label>
                     </div>
                     <div class="form-check">
-                        <input class="form-check-input" type="checkbox" value="HeavyEquipment" id="heavyequipment${s.orderSearchId}" ${s.vehicleType.includes(8) ? 'checked' : ''}>
+                        <input class="form-check-input" type="checkbox" value="HeavyEquipment" id="heavyequipment${s.orderSearchId}" ${hasVehicleType(s.vehicleType, 8, 'HeavyEquipment') ? 'checked' : ''}>
                         <label class="form-check-label" for="heavyequipment${s.orderSearchId}">
                         Heavy equipment
                         </label>
                     </div>
                     <div class="form-check">
-                        <input class="form-check-input" type="checkbox" value="Motorcycle" id="motorcycle${s.orderSearchId}" ${s.vehicleType.includes(16) ? 'checked' : ''}>
+                        <input class="form-check-input" type="checkbox" value="Motorcycle" id="motorcycle${s.orderSearchId}" ${hasVehicleType(s.vehicleType, 16, 'Motorcycle') ? 'checked' : ''}>
                         <label class="form-check-label" for="motorcycle${s.orderSearchId}">
                         Motorcycle
                         </label>
                     </div>
                     <div class="form-check">
-                        <input class="form-check-input" type="checkbox" value="Pickup" id="pickup${s.orderSearchId}" ${s.vehicleType.includes(32) ? 'checked' : ''}>
+                        <input class="form-check-input" type="checkbox" value="Pickup" id="pickup${s.orderSearchId}" ${hasVehicleType(s.vehicleType, 32, 'Pickup') ? 'checked' : ''}>
                         <label class="form-check-label" for="pickup${s.orderSearchId}">
                         Pickup
                         </label>
@@ -556,31 +591,31 @@ function renderCurrentSearches(searches){
                 </div>
                 <div class="col">
                     <div class="form-check">
-                        <input class="form-check-input" type="checkbox" value="RV" id="rv${s.orderSearchId}" ${s.vehicleType.includes(64) ? 'checked' : ''}>
+                        <input class="form-check-input" type="checkbox" value="RV" id="rv${s.orderSearchId}" ${hasVehicleType(s.vehicleType, 64, 'RV') ? 'checked' : ''}>
                         <label class="form-check-label" for="rv${s.orderSearchId}">
                         RV
                         </label>
                     </div>
                     <div class="form-check">
-                        <input class="form-check-input" type="checkbox" value="SUV" id="suv${s.orderSearchId}" ${s.vehicleType.includes(128) ? 'checked' : ''}>
+                        <input class="form-check-input" type="checkbox" value="SUV" id="suv${s.orderSearchId}" ${hasVehicleType(s.vehicleType, 128, 'SUV') ? 'checked' : ''}>
                         <label class="form-check-label" for="suv${s.orderSearchId}">
                         SUV
                         </label>
                     </div>
                     <div class="form-check">
-                        <input class="form-check-input" type="checkbox" value="TravelTrailer" id="traveltrailer${s.orderSearchId}" ${s.vehicleType.includes(256) ? 'checked' : ''}>
+                        <input class="form-check-input" type="checkbox" value="TravelTrailer" id="traveltrailer${s.orderSearchId}" ${hasVehicleType(s.vehicleType, 256, 'TravelTrailer') ? 'checked' : ''}>
                         <label class="form-check-label" for="traveltrailer${s.orderSearchId}">
                         Travel trailer
                         </label>
                     </div>
                     <div class="form-check">
-                        <input class="form-check-input" type="checkbox" value="Van" id="van${s.orderSearchId}" ${s.vehicleType.includes(512) ? 'checked' : ''}>
+                        <input class="form-check-input" type="checkbox" value="Van" id="van${s.orderSearchId}" ${hasVehicleType(s.vehicleType, 512, 'Van') ? 'checked' : ''}>
                         <label class="form-check-label" for="van${s.orderSearchId}">
                         Van
                         </label>
                     </div>
                     <div class="form-check">
-                        <input class="form-check-input" type="checkbox" value="Other" id="other${s.orderSearchId}" ${s.vehicleType.includes(1024) ? 'checked' : ''}>
+                        <input class="form-check-input" type="checkbox" value="Other" id="other${s.orderSearchId}" ${hasVehicleType(s.vehicleType, 1024, 'Other') ? 'checked' : ''}>
                         <label class="form-check-label" for="other${s.orderSearchId}">
                         Other
                         </label>
@@ -589,7 +624,7 @@ function renderCurrentSearches(searches){
             </div>
             <div class="d-flex gap-2 mt-2">
                 <button type="button" class="btn btn-primary flex-fill" id="saveSearch${s.orderSearchId}" onclick="updateSavedSearch(${s.orderSearchId})"><i class="bi bi-floppy"></i></button>
-                <button type="button" class="btn ${getSearchToggleButtonClass(s.searchState)} flex-fill" id="toggleSearch${s.orderSearchId}" onclick="toggleSavedSearch(${s.orderSearchId})">${getSearchToggleButtonText(s.searchState)}</button>
+                <button type="button" class="btn ${getSearchToggleButtonClass(normalizedSearchState)} flex-fill" id="toggleSearch${s.orderSearchId}" onclick="toggleSavedSearch(${s.orderSearchId})">${getSearchToggleButtonText(normalizedSearchState)}</button>
                 <button type="button" class="btn btn-danger flex-fill" id="deleteSearch${s.orderSearchId}" onclick="deleteSavedSearch(${s.orderSearchId})"><i class="bi bi-trash"></i></button>
             </div>
         </li>
@@ -694,6 +729,7 @@ function getSearchData(searchId){
     let readyToShip = document.getElementById('shipwithin' + searchId).value;
     let minTotal = document.getElementById('total' + searchId).value;
     let minPpm = document.getElementById('permile' + searchId).value.replace(",", ".");
+    let alias = document.getElementById('alias' + searchId)?.value ?? "";
     return {
         locations,
         vehicleTypes,
@@ -703,7 +739,8 @@ function getSearchData(searchId){
         maxVehicles,
         readyToShip,
         minTotal,
-        minPpm
+        minPpm,
+        alias
     }
 }
 
@@ -917,7 +954,7 @@ function renderCentralScreenshot(encodedImage){
 
 let baseAddress;
 if (debug) {
-    baseAddress = "https://localhost:5254/web";
+    baseAddress = "https://localhost:7274/web";
 } else {
     baseAddress = "https://loadbot.ngrok.app/web";
 }
@@ -1109,13 +1146,14 @@ function toggleSavedSearch(searchId){
     .then(function (response){
         Telegram.WebApp.HapticFeedback.notificationOccurred('success');
 
-        if (!response.data || response.data.searchState === undefined){
+        if (!response.data){
             showPopup("Search status updated");
             getCurrentSearches();
+            toggleSucceeded = true;
             return;
         }
 
-        const updatedState = response.data.searchState;
+        const updatedState = normalizeSearchStateValue(response.data);
         updateSearchStatusUI(searchId, updatedState);
         showPopup(isSearchEnabled(updatedState) ? "Search enabled" : "Search disabled");
         toggleSucceeded = true;
